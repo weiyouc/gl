@@ -89,15 +89,17 @@ export class AudioRecorder {
             this.audioContext = new AudioContext({ sampleRate: this.actualSampleRate });
             this.source = this.audioContext.createMediaStreamSource(this.stream);
 
-            // Load and initialize audio worklet with relative path
-            const response = await fetch('./js/audio/worklets/audio-processing.js');
-            const text = await response.text();
-            const blob = new Blob([text], { type: 'application/javascript' });
-            const workletUrl = URL.createObjectURL(blob);
-            
-            await this.audioContext.audioWorklet.addModule(workletUrl);
-            URL.revokeObjectURL(workletUrl);
-            
+            // Modified worklet loading approach
+            try {
+                // First try the relative path
+                await this.audioContext.audioWorklet.addModule('./js/audio/worklets/audio-processing.js');
+            } catch (workletError) {
+                Logger.warn('Failed to load worklet from relative path, trying absolute path');
+                // If relative path fails, try absolute path
+                const absolutePath = window.location.origin + '/js/audio/worklets/audio-processing.js';
+                await this.audioContext.audioWorklet.addModule(absolutePath);
+            }
+
             this.processor = new AudioWorkletNode(this.audioContext, 'audio-recorder-worklet', {
                 processorOptions: {
                     targetSampleRate: this.targetSampleRate,
