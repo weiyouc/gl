@@ -13,8 +13,7 @@ export class AudioRecorder {
      * @param {number} sampleRate - The sample rate for audio recording (default: 16000)
      */
     constructor(sampleRate = CONFIG.AUDIO.INPUT_SAMPLE_RATE) {
-        this.targetSampleRate = sampleRate;
-        this.actualSampleRate = null;
+        this.sampleRate = sampleRate;
         this.stream = null;
         this.mediaRecorder = null;
         this.audioContext = null;
@@ -30,40 +29,6 @@ export class AudioRecorder {
         this.isRecording = false;
     }
 
-
-    /**
-     * @method getSystemSampleRate
-     * @description Detects the system's actual sample rate capabilities
-     * @returns {Promise<number>} The actual sample rate supported by the system
-     * @private
-     */
-    async getSystemSampleRate() {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ 
-                audio: {
-                    channelCount: 1
-                } 
-            });
-            const tempContext = new AudioContext();
-            const source = tempContext.createMediaStreamSource(stream);
-            const actualRate = source.context.sampleRate;
-            
-            // Cleanup
-            stream.getTracks().forEach(track => track.stop());
-            await tempContext.close();
-            
-            return actualRate;
-        } catch (error) {
-            Logger.error('Error detecting system sample rate:', error);
-            throw new ApplicationError(
-                'Failed to detect system sample rate',
-                ErrorCodes.AUDIO_INIT_FAILED,
-                { originalError: error }
-            );
-        }
-    }
-
-
     /**
      * @method start
      * @description Starts audio recording with the specified callback for audio data.
@@ -74,39 +39,21 @@ export class AudioRecorder {
     async start(onAudioData) {
         this.onAudioData = onAudioData;
         try {
-            // First detect the system's actual sample rate
-            this.actualSampleRate = await this.getSystemSampleRate();
-            Logger.info(`System sample rate detected: ${this.actualSampleRate}Hz`);
-    
             // Request microphone access
             this.stream = await navigator.mediaDevices.getUserMedia({ 
                 audio: {
                     channelCount: 1,
+                    sampleRate: this.sampleRate
                 } 
             });
             
-            // Create AudioContext with the actual system sample rate
-            this.audioContext = new AudioContext({ sampleRate: this.actualSampleRate });
+            this.audioContext = new AudioContext({ sampleRate: this.sampleRate });
             this.source = this.audioContext.createMediaStreamSource(this.stream);
 
-            // Modified worklet loading approach
-            try {
-                // First try the relative path
-                await this.audioContext.audioWorklet.addModule('./js/audio/worklets/audio-processing.js');
-            } catch (workletError) {
-                Logger.warn('Failed to load worklet from relative path, trying absolute path');
-                // If relative path fails, try absolute path
-                const absolutePath = window.location.origin + '/js/audio/worklets/audio-processing.js';
-                await this.audioContext.audioWorklet.addModule(absolutePath);
-            }
-
-            this.processor = new AudioWorkletNode(this.audioContext, 'audio-recorder-worklet', {
-                processorOptions: {
-                    targetSampleRate: this.targetSampleRate,
-                    originalSampleRate: this.actualSampleRate
-                }
-            });
-
+            // Load and initialize audio worklet
+            await this.audioContext.audioWorklet.addModule('js/audio/worklets/audio-processing.js');
+            this.processor = new AudioWorkletNode(this.audioContext, 'audio-recorder-worklet');
+            
             // Handle processed audio data
             this.processor.port.onmessage = (event) => {
                 if (event.data.event === 'chunk' && this.onAudioData && this.isRecording) {
