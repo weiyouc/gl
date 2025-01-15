@@ -22,9 +22,10 @@ export class AudioStreamer {
         this.source = this.context.createBufferSource();
         this.isStreamComplete = false;
         this.checkInterval = null;
-        this.initialBufferTime = 0.1;
+        this.initialBufferTime = 0.05;
         this.endOfQueueAudioSource = null;
         this.onComplete = () => { };
+        this.isInitialized = false;
         this.gainNode.connect(this.context.destination);
         this.addPCM16 = this.addPCM16.bind(this);
     }
@@ -89,6 +90,12 @@ export class AudioStreamer {
      * @param {Int16Array} chunk - The audio data chunk.
      */
     addPCM16(chunk) {
+
+        if (!this.isInitialized) {
+            console.warn('AudioStreamer not initialized. Call initialize() first.');
+            return;
+        }
+
         const float32Array = new Float32Array(chunk.length / 2);
         const dataView = new DataView(chunk.buffer);
 
@@ -258,5 +265,19 @@ export class AudioStreamer {
         } else {
             this.onComplete();
         }
+    }
+
+    /**
+     * @method initialize
+     * @description Initializes the AudioStreamer instance.
+     * @returns {Promise<AudioStreamer>} A promise that resolves with the AudioStreamer instance when initialization is complete.
+     * @async
+     */
+    async initialize() {
+        if (this.context.state === 'suspended') {
+            await this.context.resume();
+        }
+        this.isInitialized = true;
+        return this;
     }
 } 
